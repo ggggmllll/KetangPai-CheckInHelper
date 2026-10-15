@@ -1,0 +1,15 @@
+# Android / Gradle generated files
+.gradle/
+.kotlin/
+**/build/
+local.properties
+captures/
+
+# IDE local settings
+.idea/
+*.iml
+
+# Signing credentials
+*.jks
+*.keystore
+keystore.properties
