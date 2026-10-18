@@ -253,29 +253,32 @@ private fun CheckInApp(
                     accounts, pending, places, pollErrors, lastRefresh, qrValue,
                     onScan = { scanner = true },
                     onQr = { value -> qrValue = value },
-                    onSign = { item, code, coords -> runTask {
-                        var actualCode = code
+                    onSign = { request -> runTask {
                         var latestAccounts = accounts.toList()
-                        if (item.type == "1" && actualCode.isBlank()) {
-                            val account = latestAccounts.firstOrNull { it.id in item.accountIds } ?: throw KtpError("没有可签到的账号")
-                            val (renewed, fetched) = repository.getDigitCode(account, item.id)
+                        var code = request.code
+                        if (request.item.type == "1" && code.isBlank()) {
+                            // 取数字码优先用本来就选了这门课的账号，其次才退到任意已选账号。
+                            val account = latestAccounts.firstOrNull { it.id in request.targetIds && it.id in request.item.accountIds }
+                                ?: latestAccounts.firstOrNull { it.id in request.targetIds }
+                                ?: throw KtpError("请至少选择一个要签到的账号")
+                            val (renewed, fetched) = repository.getDigitCode(account, request.item.id)
                             latestAccounts = latestAccounts.map { if (it.id == renewed.id) renewed else it }
                             accounts.clear(); accounts.addAll(latestAccounts); store.save(accounts)
-                            actualCode = fetched
-                            if (actualCode.isBlank()) throw KtpError("未获取到数字签到码，请手动填写")
+                            code = fetched
+                            if (code.isBlank()) throw KtpError("未获取到数字签到码，请手动填写")
                         }
-                        val (updated, result) = repository.signAttendance(latestAccounts, item, actualCode, coords.first, coords.second)
+                        val (updated, result) = repository.signAttendance(latestAccounts, request.copy(code = code))
                         accounts.clear(); accounts.addAll(updated); recordHistory(result); store.save(accounts)
                         snack.showSnackbar(resultMessage(result)); refresh(false)
                     } },
-                    onQrSign = { value -> runTask {
+                    onQrSign = { value, targetIds -> runTask {
                         val uri = Uri.parse(value.trim())
                         val courseId = uri.getQueryParameter("courseid").orEmpty()
                         val ticket = uri.getQueryParameter("ticketid").orEmpty()
                         val sign = uri.getQueryParameter("sign").orEmpty()
                         val expire = uri.getQueryParameter("expire").orEmpty()
                         if (courseId.isBlank() || ticket.isBlank() || sign.isBlank() || expire.isBlank()) throw KtpError("二维码缺少 courseid、ticketid、expire 或 sign 参数")
-                        val (updated, result) = repository.signQr(accounts.toList(), courseId, ticket, expire, sign)
+                        val (updated, result) = repository.signQr(accounts.toList(), targetIds, courseId, ticket, expire, sign)
                         accounts.clear(); accounts.addAll(updated); recordHistory(result); store.save(accounts)
                         qrValue = ""; snack.showSnackbar(resultMessage(result)); refresh(false)
                     } },

@@ -2,6 +2,7 @@ package com.ketangpai.checkin.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -12,8 +13,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ketangpai.checkin.DirectHistory
 import java.text.SimpleDateFormat
@@ -30,19 +33,24 @@ internal fun HistoryScreen(history: List<DirectHistory>) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         items(history) { record ->
             Card(shape = RoundedCornerShape(16.dp)) {
-                Column(Modifier.fillMaxWidth().padding(15.dp)) {
-                    Text(record.title, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA).format(Date(record.time)),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(record.title, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(Date(record.time)),
+                            Modifier.padding(start = 8.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     record.results.forEach { result ->
                         Text(
                             "${if (result.success) "✓" else "✕"} ${result.account}：${result.message}",
-                            Modifier.padding(top = 5.dp),
+                            Modifier.padding(top = 4.dp),
                             color = if (result.success) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }

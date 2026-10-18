@@ -1,6 +1,7 @@
 package com.ketangpai.checkin.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,7 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudSync
-import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ketangpai.checkin.LocalAccount
 
@@ -52,54 +53,78 @@ internal fun AccountsScreen(
     var deleteTarget by remember { mutableStateOf<LocalAccount?>(null) }
     var passwordTarget by remember { mutableStateOf<LocalAccount?>(null) }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onAdd, Modifier.weight(1f)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(5.dp)); Text("添加课堂派账号") }
-            OutlinedButton(onClick = onSync) { Icon(Icons.Default.CloudSync, null); Spacer(Modifier.width(5.dp)); Text("同步") }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onAdd, Modifier.weight(1f)) {
+                Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(5.dp)); Text("添加账号")
+            }
+            OutlinedButton(onClick = onSync) {
+                Icon(Icons.Default.CloudSync, null, Modifier.size(18.dp)); Spacer(Modifier.width(5.dp)); Text("同步")
+            }
         }
-        if (accounts.isEmpty()) Empty("把需要代签的课堂派账号添加到这台手机。")
+        if (accounts.isEmpty()) Empty("把课堂派账号添加到这台手机。")
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(accounts, key = { it.id }) { account ->
-                var coursesExpanded by remember(account.id) { mutableStateOf(false) }
-                Card(shape = RoundedCornerShape(18.dp)) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                var expanded by remember(account.id) { mutableStateOf(false) }
+                Card(shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.AccountCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(34.dp))
+                            Icon(Icons.Default.AccountCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(account.displayName.ifBlank { account.email }, fontWeight = FontWeight.SemiBold)
-                                Text(account.email, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(account.displayName.ifBlank { account.email }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(account.email, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             Switch(account.enabled, { onUpdate(account.id, account.copy(enabled = it)) })
                         }
-                        TextButton(onClick = { coursesExpanded = !coursesExpanded }, modifier = Modifier.fillMaxWidth().padding(top = 5.dp)) {
-                            Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-                                Text("课程 ${account.courses.size} 门 · 已启用 ${account.courses.count { it.enabled }} 门", style = MaterialTheme.typography.bodySmall)
-                                Text(account.courseSemester.ifBlank { "待同步学期信息" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                        Row(
+                            Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "${account.courses.size} 门课程 · 启用 ${account.courses.count { it.enabled }}",
+                                Modifier.weight(1f),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (account.courseSemester.isNotBlank()) {
+                                Text(
+                                    account.courseSemester,
+                                    Modifier.padding(start = 8.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
-                            Text(if (coursesExpanded) "收起" else "展开")
-                            Icon(if (coursesExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+                            Icon(
+                                if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = if (expanded) "收起课程" else "展开课程",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
                         }
-                        AnimatedVisibility(coursesExpanded) {
+
+                        AnimatedVisibility(expanded) {
                             Column {
                                 if (account.courses.isEmpty()) {
-                                    Text("该学期暂无课程", Modifier.padding(8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("该学期暂无课程", Modifier.padding(vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 account.courses.forEach { course ->
                                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                         Checkbox(course.enabled, { enabled ->
                                             onUpdate(account.id, account.copy(courses = account.courses.map { if (it.id == course.id) it.copy(enabled = enabled) else it }))
                                         })
-                                        Text(course.name, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                        Text(course.name, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                             }
                         }
-                        Row {
-                            TextButton(onClick = { passwordTarget = account }) { Text("更新密码") }
+
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { passwordTarget = account }) { Text("更新密码", style = MaterialTheme.typography.labelMedium) }
                             TextButton(onClick = { deleteTarget = account }) {
-                                Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.error)
-                                Spacer(Modifier.width(4.dp))
-                                Text("移除账号", color = MaterialTheme.colorScheme.error)
+                                Text("移除", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
                             }
                         }
                     }

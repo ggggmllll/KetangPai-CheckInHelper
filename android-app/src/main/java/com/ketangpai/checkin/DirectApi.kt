@@ -54,6 +54,15 @@ data class Attendance(
     val createdAt: Long,
     val accountIds: Set<String>,
 )
+
+/** 一次签到请求：目标考勤、参与签到的账号，以及本次填写的内容。 */
+data class SignRequest(
+    val item: Attendance,
+    val targetIds: Set<String>,
+    val code: String = "",
+    val latitude: String = "",
+    val longitude: String = "",
+)
 data class DirectResult(val account: String, val success: Boolean, val message: String)
 data class DirectHistory(val time: Long, val title: String, val type: String, val results: List<DirectResult>)
 data class GpsPlace(
@@ -308,15 +317,35 @@ class DirectRepository(private val api: KetangpaiDirectApi = KetangpaiDirectApi(
 
     suspend fun getDigitCode(account: LocalAccount, id: String): Pair<LocalAccount, String> = withLogin(account) { api.digitCode(it, id) }
 
-    suspend fun signAttendance(accounts: List<LocalAccount>, item: Attendance, code: String = "", latitude: String = "", longitude: String = ""): Pair<List<LocalAccount>, DirectHistory> {
-        val targets = accounts.filter { it.enabled && it.id in item.accountIds }; if (targets.isEmpty()) throw KtpError("没有可签到的账号")
-        val body = JSONObject().put("id", item.id).put("code", code).put("unusual", "").put("latitude", latitude).put("longitude", longitude).put("accuracy", "").put("clienttype", 1)
+    /**
+     * 数字与 GPS 签到。参与账号由调用方指定，不再要求账号事先绑定这门课程：
+     * 只要账号可用，就可以为任意课程的考勤提交。
+     */
+    suspend fun signAttendance(accounts: List<LocalAccount>, request: SignRequest): Pair<List<LocalAccount>, DirectHistory> {
+        val targets = accounts.filter { it.id in request.targetIds }
+        if (targets.isEmpty()) throw KtpError("请至少选择一个要签到的账号")
+        val item = request.item
+        val body = JSONObject()
+            .put("id", item.id).put("code", request.code).put("unusual", "")
+            .put("latitude", request.latitude).put("longitude", request.longitude)
+            .put("accuracy", "").put("clienttype", 1)
         return submitTargets(accounts, targets, item.courseName, item.type, body)
     }
 
-    suspend fun signQr(accounts: List<LocalAccount>, courseId: String, ticket: String, expire: String, sign: String): Pair<List<LocalAccount>, DirectHistory> {
-        val targets = accounts.filter { it.enabled && it.courses.any { c -> c.id == courseId && c.enabled } }; if (targets.isEmpty()) throw KtpError("没有绑定此课程且已启用的账号")
-        val title = targets.first().courses.first { it.id == courseId }.name
+    /** 二维码签到：同样对指定的任意账号提交，课程名仅用于结果展示。 */
+    suspend fun signQr(
+        accounts: List<LocalAccount>,
+        targetIds: Set<String>,
+        courseId: String,
+        ticket: String,
+        expire: String,
+        sign: String,
+    ): Pair<List<LocalAccount>, DirectHistory> {
+        val targets = accounts.filter { it.id in targetIds }
+        if (targets.isEmpty()) throw KtpError("请至少选择一个要签到的账号")
+        val title = accounts.firstNotNullOfOrNull { account ->
+            account.courses.firstOrNull { it.id == courseId }?.name
+        } ?: "二维码签到"
         return submitTargets(accounts, targets, title, "3", JSONObject().put("ticketid", ticket).put("expire", expire).put("sign", sign))
     }
 
