@@ -29,13 +29,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Contrast
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
@@ -73,7 +77,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -93,7 +97,18 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val store = LocalAccountStore(this)
         val repository = DirectRepository()
-        setContent { CheckInTheme { CheckInApp(store, repository) } }
+        val themePreference = ThemePreference(this)
+        setContent {
+            var themeMode by remember { mutableStateOf(themePreference.mode) }
+            CheckInTheme(themeMode) {
+                CheckInApp(
+                    store = store,
+                    repository = repository,
+                    themeMode = themeMode,
+                    onThemeModeChange = { mode -> themePreference.mode = mode; themeMode = mode },
+                )
+            }
+        }
     }
 }
 
@@ -101,7 +116,12 @@ private enum class Page(val label: String) { HOME("首页"), ACCOUNTS("账号"),
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CheckInApp(store: LocalAccountStore, repository: DirectRepository) {
+private fun CheckInApp(
+    store: LocalAccountStore,
+    repository: DirectRepository,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+) {
     val scope = rememberCoroutineScope()
     val snack = remember { SnackbarHostState() }
     val cachedSnapshot = remember { store.loadSnapshot() }
@@ -117,6 +137,7 @@ private fun CheckInApp(store: LocalAccountStore, repository: DirectRepository) {
     var qrValue by remember { mutableStateOf("") }
     var lastRefresh by remember { mutableStateOf(cachedSnapshot.second) }
     var pollErrors by remember { mutableStateOf(emptyList<String>()) }
+    var themeMenu by remember { mutableStateOf(false) }
 
     suspend fun refresh(syncCourses: Boolean = false) {
         if (accounts.isEmpty() || busy) return
@@ -193,6 +214,21 @@ private fun CheckInApp(store: LocalAccountStore, repository: DirectRepository) {
                 actions = {
                     if (busy) CircularProgressIndicator(Modifier.padding(12.dp).size(22.dp), strokeWidth = 2.dp)
                     else IconButton(onClick = { runTask { refresh(true) } }) { Icon(Icons.Default.Refresh, "立即刷新") }
+                    Box {
+                        IconButton(onClick = { themeMenu = true }) {
+                            Icon(themeMode.icon(), contentDescription = "外观主题")
+                        }
+                        DropdownMenu(expanded = themeMenu, onDismissRequest = { themeMenu = false }) {
+                            ThemeMode.entries.forEach { candidate ->
+                                DropdownMenuItem(
+                                    text = { Text(candidate.label) },
+                                    leadingIcon = { Icon(candidate.icon(), null) },
+                                    trailingIcon = { if (candidate == themeMode) Icon(Icons.Default.Check, "已选择") },
+                                    onClick = { themeMenu = false; onThemeModeChange(candidate) },
+                                )
+                            }
+                        }
+                    }
                 },
             )
         },
@@ -277,6 +313,13 @@ private fun CheckInApp(store: LocalAccountStore, repository: DirectRepository) {
 
 private fun resultMessage(history: DirectHistory): String {
     val success = history.results.count { it.success }; return "${history.title}：$success/${history.results.size} 个账号签到成功"
+}
+
+/** 主题菜单里每个模式对应的图标。 */
+private fun ThemeMode.icon(): ImageVector = when (this) {
+    ThemeMode.SYSTEM -> Icons.Default.Contrast
+    ThemeMode.LIGHT -> Icons.Default.LightMode
+    ThemeMode.DARK -> Icons.Default.DarkMode
 }
 
 @Composable
@@ -453,7 +496,7 @@ private fun AttendanceCard(item: Attendance, onSelect: () -> Unit) {
 private fun HistoryScreen(history: List<DirectHistory>) {
     if (history.isEmpty()) Empty("本机还没有签到记录。")
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { items(history) { h ->
-        Card(shape = RoundedCornerShape(16.dp)) { Column(Modifier.fillMaxWidth().padding(15.dp)) { Text(h.title, fontWeight = FontWeight.SemiBold); Text(SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA).format(Date(h.time)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant); h.results.forEach { result -> Text("${if (result.success) "✓" else "✕"} ${result.account}：${result.message}", Modifier.padding(top = 5.dp), color = if (result.success) Color(0xFF16704D) else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) } } }
+        Card(shape = RoundedCornerShape(16.dp)) { Column(Modifier.fillMaxWidth().padding(15.dp)) { Text(h.title, fontWeight = FontWeight.SemiBold); Text(SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA).format(Date(h.time)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant); h.results.forEach { result -> Text("${if (result.success) "✓" else "✕"} ${result.account}：${result.message}", Modifier.padding(top = 5.dp), color = if (result.success) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) } } }
     } }
 }
 

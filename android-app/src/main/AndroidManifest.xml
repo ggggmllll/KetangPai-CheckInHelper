@@ -11,7 +11,7 @@
         android:label="课堂派签到助手"
         android:roundIcon="@drawable/app_icon"
         android:usesCleartextTraffic="false"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@style/Theme.CheckIn">
         <activity
             android:name=".MainActivity"
             android:exported="true"

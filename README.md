@@ -11,6 +11,7 @@
 - GPS 地点列表：命名保存地点，支持手动输入和采样手机当前位置，显示位置来源和精度。
 - 二维码签到：相机扫描或粘贴链接，WeChat/OpenCV 与 ML Kit 并行识别，支持自动缩放、手动缩放、点击对焦、补光和扫码诊断。
 - 本机记录：分别展示各账号的签到结果。
+- 暗黑模式：内置浅色与深色两套配色，顶栏可在「跟随系统 / 浅色 / 深色」之间切换，选择只保存在本机；状态栏、导航栏与启动底色会随主题同步，深色下不会闪白屏。
 
 账号、密码、登录 token 和地点加密保存在本机。首次添加账号需要联网。当前未实现后台持续监控，锁屏或切换到其他应用后不保证持续刷新。
 
@@ -65,7 +66,7 @@ android-app/
       WeChatQrDecoder.kt # OpenCV 模型与小码识别
       DirectApi.kt       # 课堂派 API、账号与本机数据存储
       CourseSemester.kt  # 学期选择与展示
-      Theme.kt           # 界面主题
+      Theme.kt           # 浅色/深色配色、主题模式与偏好存储
     res/                # Android 资源
   build.gradle.kts
 gradle/wrapper/         # Gradle Wrapper
