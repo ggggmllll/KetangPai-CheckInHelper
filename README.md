@@ -5,7 +5,7 @@
 ## 功能
 
 - 账号池：添加账号、更新密码、启用或停用账号；优先同步本学期课程，课程列表默认折叠，展开后可逐门启用或停用。
-- 考勤刷新：前台每轮查询后等待 15 秒，回到前台立即刷新；接口异常时保留受影响账号的上次结果并显示错误。
+- 考勤刷新：有待签到时每 15 秒查询一次，没有待签到也没有接口错误时放慢到 60 秒一次，回到前台立即刷新；接口异常时保留受影响账号的上次结果并显示错误。课程列表每 3 小时或跨学期时自动重新同步，不必手动点同步。
 - 数字签到：自动获取数字码，也可手动输入。
 - GPS 签到：使用手机当前位置、手动输入经纬度，或选择已保存地点。
 - GPS 地点列表：命名保存地点，支持手动输入和采样手机当前位置，显示位置来源和精度。
@@ -57,7 +57,7 @@ android-app/
   src/main/
     AndroidManifest.xml
     java/com/ketangpai/checkin/
-      MainActivity.kt    # Compose 页面
+      MainActivity.kt    # 应用入口、页面路由与轮询调度
       DeviceLocation.kt  # 多来源定位、缓存与精度选择
       LocationSampler.kt # 采样状态与取消
       QrScanner.kt       # CameraX 预览、对焦与诊断
@@ -67,8 +67,18 @@ android-app/
       DirectApi.kt       # 课堂派 API、账号与本机数据存储
       CourseSemester.kt  # 学期选择与展示
       Theme.kt           # 浅色/深色配色、主题模式与偏好存储
-    res/                # Android 资源
+      ui/                # 各页面与对话框
+        HomeScreen.kt
+        AccountsScreen.kt
+        PendingScreen.kt
+        PlacesScreen.kt
+        HistoryScreen.kt
+        Dialogs.kt
+        Components.kt
+    res/                # Android 资源（values/ 与 values-night/ 各一套窗口主题）
   build.gradle.kts
+gradle/libs.versions.toml # 依赖与插件版本集中管理
+.github/workflows/        # 打 tag 自动构建并发布 APK
 gradle/wrapper/         # Gradle Wrapper
 build.gradle.kts
 settings.gradle.kts
@@ -76,6 +86,19 @@ gradle.properties
 gradlew
 gradlew.bat
 ```
+
+## 自动发布
+
+推送 `v*` 形式的 tag（例如 `v1.1.1`）会触发 `.github/workflows/android-release.yml`：
+在 GitHub 的 Ubuntu 环境装好 JDK 21 与 SDK 36，构建签名 Release APK，计算 SHA-256，
+并上传到对应的 Release。手动触发（workflow_dispatch）只产出构建产物，不发布。
+
+需要在仓库 Secrets 中配置四项：`KEYSTORE_BASE64`（`base64 -w0 release.jks` 的结果）、
+`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`。未配置密钥时会退化为未签名 APK，
+并在日志中给出警告。
+
+> 同一个 `applicationId` 换签名后无法覆盖安装，请长期保管同一份 `.jks`。
+
 
 ## 许可
 
