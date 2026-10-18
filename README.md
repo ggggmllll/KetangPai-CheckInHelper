@@ -5,12 +5,14 @@
 ## 功能
 
 - 账号池：添加账号、更新密码、启用或停用账号；优先同步本学期课程，课程列表默认折叠，展开后可逐门启用或停用。
-- 考勤刷新：前台每轮查询后等待 15 秒，回到前台立即刷新；接口异常时保留受影响账号的上次结果并显示错误。
+- 考勤刷新：有待签到时每 15 秒查询一次，没有待签到也没有接口错误时放慢到 60 秒一次，回到前台立即刷新；接口异常时保留受影响账号的上次结果并显示错误。课程列表每 3 小时或跨学期时自动重新同步，不必手动点同步。
 - 数字签到：自动获取数字码，也可手动输入。
 - GPS 签到：使用手机当前位置、手动输入经纬度，或选择已保存地点。
+- 自由选账号：签到不再要求账号事先绑定这门课程，任何启用的账号都能为任意考勤提交。数字与 GPS 签到可逐条勾选参与账号，默认选中原本就选了该课的账号；二维码签到默认使用全部启用账号。
 - GPS 地点列表：命名保存地点，支持手动输入和采样手机当前位置，显示位置来源和精度。
 - 二维码签到：相机扫描或粘贴链接，WeChat/OpenCV 与 ML Kit 并行识别，支持自动缩放、手动缩放、点击对焦、补光和扫码诊断。
 - 本机记录：分别展示各账号的签到结果。
+- 暗黑模式：内置浅色与深色两套配色，顶栏可在「跟随系统 / 浅色 / 深色」之间切换，选择只保存在本机；状态栏、导航栏与启动底色会随主题同步，深色下不会闪白屏。
 
 账号、密码、登录 token 和地点加密保存在本机。首次添加账号需要联网。当前未实现后台持续监控，锁屏或切换到其他应用后不保证持续刷新。
 
@@ -56,7 +58,7 @@ android-app/
   src/main/
     AndroidManifest.xml
     java/com/ketangpai/checkin/
-      MainActivity.kt    # Compose 页面
+      MainActivity.kt    # 应用入口、页面路由与轮询调度
       DeviceLocation.kt  # 多来源定位、缓存与精度选择
       LocationSampler.kt # 采样状态与取消
       QrScanner.kt       # CameraX 预览、对焦与诊断
@@ -65,9 +67,19 @@ android-app/
       WeChatQrDecoder.kt # OpenCV 模型与小码识别
       DirectApi.kt       # 课堂派 API、账号与本机数据存储
       CourseSemester.kt  # 学期选择与展示
-      Theme.kt           # 界面主题
-    res/                # Android 资源
+      Theme.kt           # 浅色/深色配色、主题模式与偏好存储
+      ui/                # 各页面与对话框
+        HomeScreen.kt
+        AccountsScreen.kt
+        PendingScreen.kt
+        PlacesScreen.kt
+        HistoryScreen.kt
+        Dialogs.kt
+        Components.kt
+    res/                # Android 资源（values/ 与 values-night/ 各一套窗口主题）
   build.gradle.kts
+gradle/libs.versions.toml # 依赖与插件版本集中管理
+.github/workflows/        # 打 tag 自动构建并发布 APK
 gradle/wrapper/         # Gradle Wrapper
 build.gradle.kts
 settings.gradle.kts
@@ -75,6 +87,19 @@ gradle.properties
 gradlew
 gradlew.bat
 ```
+
+## 自动发布
+
+推送 `v*` 形式的 tag（例如 `v1.1.1`）会触发 `.github/workflows/android-release.yml`：
+在 GitHub 的 Ubuntu 环境装好 JDK 21 与 SDK 36，构建签名 Release APK，计算 SHA-256，
+并上传到对应的 Release。手动触发（workflow_dispatch）只产出构建产物，不发布。
+
+需要在仓库 Secrets 中配置四项：`KEYSTORE_BASE64`（`base64 -w0 release.jks` 的结果）、
+`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`。未配置密钥时会退化为未签名 APK，
+并在日志中给出警告。
+
+> 同一个 `applicationId` 换签名后无法覆盖安装，请长期保管同一份 `.jks`。
+
 
 ## 许可
 

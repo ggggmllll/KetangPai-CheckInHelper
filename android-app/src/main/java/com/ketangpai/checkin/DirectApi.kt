@@ -27,6 +27,12 @@ import javax.crypto.spec.GCMParameterSpec
 
 private const val KTP_BASE = "https://openapiv5.ketangpai.com"
 
+/** 本机最多保留的签到记录条数，内存与落盘使用同一个上限。 */
+internal const val HISTORY_LIMIT = 200
+
+/** 课程列表多久重新同步一次：只有跨学期或课程变动后才需要，不必每轮都拉。 */
+internal const val COURSE_SYNC_INTERVAL_MS = 3 * 60 * 60 * 1000L
+
 data class LocalCourse(val id: String, val name: String, val semester: String = "", val enabled: Boolean = true)
 data class LocalAccount(
     val id: String = UUID.randomUUID().toString(),
@@ -37,6 +43,7 @@ data class LocalAccount(
     val enabled: Boolean = true,
     val courses: List<LocalCourse> = emptyList(),
     val courseSemester: String = "",
+    val courseSyncedAt: Long = 0L,
 )
 data class Attendance(
     val id: String,
@@ -46,6 +53,15 @@ data class Attendance(
     val title: String,
     val createdAt: Long,
     val accountIds: Set<String>,
+)
+
+/** 一次签到请求：目标考勤、参与签到的账号，以及本次填写的内容。 */
+data class SignRequest(
+    val item: Attendance,
+    val targetIds: Set<String>,
+    val code: String = "",
+    val latitude: String = "",
+    val longitude: String = "",
 )
 data class DirectResult(val account: String, val success: Boolean, val message: String)
 data class DirectHistory(val time: Long, val title: String, val type: String, val results: List<DirectResult>)
@@ -64,6 +80,13 @@ class LocalAccountStore(context: Context) {
     private val prefs = context.getSharedPreferences("ketangpai_accounts", Context.MODE_PRIVATE)
     private val alias = "ketangpai_accounts_aes"
 
+    /**
+     * 读取时发现既有数据无法解密或无法解析：本机密钥失效（换机、恢复出厂、系统重置）
+     * 或数据损坏。调用方据此提示用户重新登录，而不是把账号池当成「空」处理。
+     */
+    var readCorrupted = false
+        private set
+
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (ks.getKey(alias, null) as? SecretKey)?.let { return it }
@@ -73,13 +96,19 @@ class LocalAccountStore(context: Context) {
         return gen.generateKey()
     }
 
-    private fun decrypt(name: String): String? = try {
+    private fun decrypt(name: String): String? {
+        // 从未写入过，属于正常空数据，不算损坏。
         val encoded = prefs.getString(name, null) ?: return null
-        val bytes = Base64.decode(encoded, Base64.NO_WRAP)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
-        String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
-    } catch (_: Exception) { null }
+        return try {
+            val bytes = Base64.decode(encoded, Base64.NO_WRAP)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
+            String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
+        } catch (_: Exception) {
+            readCorrupted = true
+            null
+        }
+    }
 
     private fun encrypt(name: String, value: String) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -91,7 +120,7 @@ class LocalAccountStore(context: Context) {
     fun accounts(): List<LocalAccount> = runCatching {
         val array = JSONArray(decrypt("data") ?: "[]")
         (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let(::accountFromJson) }
-    }.getOrDefault(emptyList())
+    }.getOrElse { readCorrupted = true; emptyList() }
 
     fun save(accounts: List<LocalAccount>) {
         val array = JSONArray(); accounts.forEach { array.put(accountToJson(it)) }; encrypt("data", array.toString())
@@ -107,7 +136,7 @@ class LocalAccountStore(context: Context) {
     }.getOrDefault(emptyList())
 
     fun saveHistory(history: List<DirectHistory>) {
-        val array = JSONArray(); history.take(200).forEach { h ->
+        val array = JSONArray(); history.take(HISTORY_LIMIT).forEach { h ->
             val results = JSONArray(); h.results.forEach { r -> results.put(JSONObject().put("account", r.account).put("success", r.success).put("message", r.message)) }
             array.put(JSONObject().put("time", h.time).put("title", h.title).put("type", h.type).put("results", results))
         }; encrypt("history", array.toString())
@@ -152,11 +181,12 @@ class LocalAccountStore(context: Context) {
         private fun accountFromJson(o: JSONObject): LocalAccount {
             val courses = o.optJSONArray("courses") ?: JSONArray()
             return LocalAccount(o.optString("id"), o.optString("email"), o.optString("password"), o.optString("token"), o.optString("displayName"), o.optBoolean("enabled", true),
-                (0 until courses.length()).mapNotNull { i -> courses.optJSONObject(i)?.let { c -> LocalCourse(c.optString("id"), c.optString("name"), c.optString("semester"), c.optBoolean("enabled", true)) } }, o.optString("courseSemester"))
+                (0 until courses.length()).mapNotNull { i -> courses.optJSONObject(i)?.let { c -> LocalCourse(c.optString("id"), c.optString("name"), c.optString("semester"), c.optBoolean("enabled", true)) } }, o.optString("courseSemester"),
+                o.optLong("courseSyncedAt"))
         }
         private fun accountToJson(a: LocalAccount): JSONObject {
             val courses = JSONArray(); a.courses.forEach { c -> courses.put(JSONObject().put("id", c.id).put("name", c.name).put("semester", c.semester).put("enabled", c.enabled)) }
-            return JSONObject().put("id", a.id).put("email", a.email).put("password", a.password).put("token", a.token).put("displayName", a.displayName).put("enabled", a.enabled).put("courses", courses).put("courseSemester", a.courseSemester)
+            return JSONObject().put("id", a.id).put("email", a.email).put("password", a.password).put("token", a.token).put("displayName", a.displayName).put("enabled", a.enabled).put("courses", courses).put("courseSemester", a.courseSemester).put("courseSyncedAt", a.courseSyncedAt)
         }
     }
 }
@@ -234,7 +264,7 @@ class DirectRepository(private val api: KetangpaiDirectApi = KetangpaiDirectApi(
     suspend fun addAccount(email: String, password: String): LocalAccount {
         val account = api.login(LocalAccount(email = email.trim(), password = password))
         val synced = api.courses(account.token)
-        return account.copy(courses = synced.courses, courseSemester = synced.semesterLabel)
+        return account.copy(courses = synced.courses, courseSemester = synced.semesterLabel, courseSyncedAt = System.currentTimeMillis())
     }
 
     private suspend fun <T> withLogin(account: LocalAccount, action: suspend (String) -> T): Pair<LocalAccount, T> {
@@ -252,10 +282,18 @@ class DirectRepository(private val api: KetangpaiDirectApi = KetangpaiDirectApi(
             limiter.withPermit {
                 var account = original; val pending = mutableListOf<Attendance>(); val errors = mutableListOf<String>()
                 try {
-                    if (syncCourses || (account.courses.isEmpty() && account.courseSemester.isBlank())) {
+                    // 课程列表只在首次使用或超过同步周期后重新拉取。跨学期时会被这里的
+                    // 时间判断自然带到新学期，不必靠每轮全量同步去撞。
+                    val coursesStale = account.courseSyncedAt == 0L ||
+                        System.currentTimeMillis() - account.courseSyncedAt > COURSE_SYNC_INTERVAL_MS
+                    if (syncCourses || coursesStale) {
                         val renewed = withLogin(account) { api.courses(it) }; account = renewed.first
                         val enabled = account.courses.associate { it.id to it.enabled }
-                        account = account.copy(courses = renewed.second.courses.map { it.copy(enabled = enabled[it.id] ?: true) }, courseSemester = renewed.second.semesterLabel)
+                        account = account.copy(
+                            courses = renewed.second.courses.map { it.copy(enabled = enabled[it.id] ?: true) },
+                            courseSemester = renewed.second.semesterLabel,
+                            courseSyncedAt = System.currentTimeMillis(),
+                        )
                     }
                     for (course in account.courses.filter { it.enabled }) {
                         try {
@@ -279,15 +317,35 @@ class DirectRepository(private val api: KetangpaiDirectApi = KetangpaiDirectApi(
 
     suspend fun getDigitCode(account: LocalAccount, id: String): Pair<LocalAccount, String> = withLogin(account) { api.digitCode(it, id) }
 
-    suspend fun signAttendance(accounts: List<LocalAccount>, item: Attendance, code: String = "", latitude: String = "", longitude: String = ""): Pair<List<LocalAccount>, DirectHistory> {
-        val targets = accounts.filter { it.enabled && it.id in item.accountIds }; if (targets.isEmpty()) throw KtpError("没有可签到的账号")
-        val body = JSONObject().put("id", item.id).put("code", code).put("unusual", "").put("latitude", latitude).put("longitude", longitude).put("accuracy", "").put("clienttype", 1)
+    /**
+     * 数字与 GPS 签到。参与账号由调用方指定，不再要求账号事先绑定这门课程：
+     * 只要账号可用，就可以为任意课程的考勤提交。
+     */
+    suspend fun signAttendance(accounts: List<LocalAccount>, request: SignRequest): Pair<List<LocalAccount>, DirectHistory> {
+        val targets = accounts.filter { it.id in request.targetIds }
+        if (targets.isEmpty()) throw KtpError("请至少选择一个要签到的账号")
+        val item = request.item
+        val body = JSONObject()
+            .put("id", item.id).put("code", request.code).put("unusual", "")
+            .put("latitude", request.latitude).put("longitude", request.longitude)
+            .put("accuracy", "").put("clienttype", 1)
         return submitTargets(accounts, targets, item.courseName, item.type, body)
     }
 
-    suspend fun signQr(accounts: List<LocalAccount>, courseId: String, ticket: String, expire: String, sign: String): Pair<List<LocalAccount>, DirectHistory> {
-        val targets = accounts.filter { it.enabled && it.courses.any { c -> c.id == courseId && c.enabled } }; if (targets.isEmpty()) throw KtpError("没有绑定此课程且已启用的账号")
-        val title = targets.first().courses.first { it.id == courseId }.name
+    /** 二维码签到：同样对指定的任意账号提交，课程名仅用于结果展示。 */
+    suspend fun signQr(
+        accounts: List<LocalAccount>,
+        targetIds: Set<String>,
+        courseId: String,
+        ticket: String,
+        expire: String,
+        sign: String,
+    ): Pair<List<LocalAccount>, DirectHistory> {
+        val targets = accounts.filter { it.id in targetIds }
+        if (targets.isEmpty()) throw KtpError("请至少选择一个要签到的账号")
+        val title = accounts.firstNotNullOfOrNull { account ->
+            account.courses.firstOrNull { it.id == courseId }?.name
+        } ?: "二维码签到"
         return submitTargets(accounts, targets, title, "3", JSONObject().put("ticketid", ticket).put("expire", expire).put("sign", sign))
     }
 

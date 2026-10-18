@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        系统处于深色模式时的启动窗口外观。即使用户在应用内选了「浅色」，
+        首帧也只会有极短的一瞬，随后由 Compose 主题接管并覆盖状态栏与底色。
+    -->
+    <style name="Theme.CheckIn" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@color/window_background</item>
+        <item name="android:navigationBarColor">@color/window_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
