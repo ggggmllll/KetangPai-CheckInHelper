@@ -5,36 +5,22 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Contrast
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Contrast
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -46,10 +32,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -58,6 +45,11 @@ import com.ketangpai.checkin.ui.AddAccountDialog
 import com.ketangpai.checkin.ui.AddPlaceDialog
 import com.ketangpai.checkin.ui.HistoryScreen
 import com.ketangpai.checkin.ui.HomeScreen
+import com.ketangpai.checkin.ui.IosBarButton
+import com.ketangpai.checkin.ui.IosTabBar
+import com.ketangpai.checkin.ui.IosToast
+import com.ketangpai.checkin.ui.IosToastState
+import com.ketangpai.checkin.ui.IosToolbar
 import com.ketangpai.checkin.ui.PendingScreen
 import com.ketangpai.checkin.ui.PlacesScreen
 import kotlinx.coroutines.delay
@@ -84,10 +76,9 @@ class MainActivity : ComponentActivity() {
 }
 
 internal enum class Page(val label: String) {
-    HOME("首页"), ACCOUNTS("账号"), PENDING("待签到"), PLACES("地点"), HISTORY("记录")
+    HOME("首页"), PENDING("待签到"), ACCOUNTS("账号"), PLACES("地点"), HISTORY("记录")
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CheckInApp(
     store: LocalAccountStore,
@@ -96,7 +87,7 @@ private fun CheckInApp(
     onThemeModeChange: (ThemeMode) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val snack = remember { SnackbarHostState() }
+    val toast = remember { IosToastState() }
     val accounts = remember { mutableStateListOf<LocalAccount>().apply { addAll(store.accounts()) } }
     // 读完账号池立刻取本次读取的结果，避免被后面的读取覆盖。
     val storeCorrupted = remember { store.readCorrupted }
@@ -116,7 +107,7 @@ private fun CheckInApp(
     var themeMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        if (storeCorrupted) snack.showSnackbar("本机账号数据无法解密，可能是系统密钥已重置，请重新添加账号")
+        if (storeCorrupted) toast.show("本机账号数据无法解密，可能是系统密钥已重置，请重新添加账号")
     }
 
     suspend fun refresh(syncCourses: Boolean = false) {
@@ -181,61 +172,42 @@ private fun CheckInApp(
 
     fun runTask(block: suspend () -> Unit) {
         scope.launch {
-            try { block() } catch (e: Exception) { snack.showSnackbar(e.message ?: "操作失败") }
+            try { block() } catch (e: Exception) { toast.show(e.message ?: "操作失败") }
         }
     }
 
-    val title = when (page) {
-        Page.HOME -> "课堂派签到助手"
-        Page.ACCOUNTS -> "本机账号池"
-        Page.PENDING -> "待签到考勤"
-        Page.PLACES -> "GPS 地点"
-        Page.HISTORY -> "本机签到记录"
-    }
-
     Scaffold(
-        contentWindowInsets = WindowInsets.navigationBars,
-        snackbarHost = { SnackbarHost(snack) },
+        containerColor = iosColors.groupedBackground,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                title = { Text(title, fontWeight = FontWeight.SemiBold) },
-                actions = {
-                    if (busy) CircularProgressIndicator(Modifier.padding(12.dp).size(22.dp), strokeWidth = 2.dp)
-                    else IconButton(onClick = { runTask { refresh(true) } }) { Icon(Icons.Default.Refresh, "立即刷新") }
-                    Box {
-                        IconButton(onClick = { themeMenu = true }) {
-                            Icon(themeMode.icon(), contentDescription = "外观主题")
-                        }
-                        DropdownMenu(expanded = themeMenu, onDismissRequest = { themeMenu = false }) {
-                            ThemeMode.entries.forEach { candidate ->
-                                DropdownMenuItem(
-                                    text = { Text(candidate.label) },
-                                    leadingIcon = { Icon(candidate.icon(), null) },
-                                    trailingIcon = { if (candidate == themeMode) Icon(Icons.Default.Check, "已选择") },
-                                    onClick = { themeMenu = false; onThemeModeChange(candidate) },
-                                )
-                            }
+            IosToolbar {
+                if (busy) {
+                    Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = iosColors.secondaryLabel)
+                    }
+                } else {
+                    IosBarButton(Icons.Outlined.Refresh, "立即刷新", onClick = { runTask { refresh(true) } })
+                }
+                Box {
+                    IosBarButton(themeMode.icon(), "外观主题", onClick = { themeMenu = true })
+                    DropdownMenu(expanded = themeMenu, onDismissRequest = { themeMenu = false }) {
+                        ThemeMode.entries.forEach { candidate ->
+                            DropdownMenuItem(
+                                text = { Text(candidate.label, fontSize = 15.sp) },
+                                leadingIcon = { Icon(candidate.icon(), null, Modifier.size(20.dp)) },
+                                trailingIcon = {
+                                    if (candidate == themeMode) Icon(Icons.Outlined.Check, "已选择", Modifier.size(18.dp), tint = iosColors.blue)
+                                },
+                                onClick = { themeMenu = false; onThemeModeChange(candidate) },
+                            )
                         }
                     }
-                },
-            )
-        },
-        bottomBar = {
-            NavigationBar {
-                Page.entries.forEach { destination ->
-                    val icon = when (destination) {
-                        Page.HOME -> Icons.Default.Home
-                        Page.ACCOUNTS -> Icons.Default.AccountCircle
-                        Page.PENDING -> Icons.Default.CheckCircle
-                        Page.PLACES -> Icons.Default.LocationOn
-                        Page.HISTORY -> Icons.Default.History
-                    }
-                    NavigationBarItem(page == destination, { page = destination }, icon = { Icon(icon, null) }, label = { Text(destination.label) })
                 }
             }
         },
+        bottomBar = { IosTabBar(page) { page = it } },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        Box(Modifier.fillMaxSize().padding(padding)) {
             when (page) {
                 Page.HOME -> HomeScreen(accounts, pending, pollErrors, lastRefresh, onOpen = { page = it }, onRefresh = { runTask { refresh(true) } })
                 Page.ACCOUNTS -> AccountsScreen(
@@ -269,7 +241,7 @@ private fun CheckInApp(
                         }
                         val (updated, result) = repository.signAttendance(latestAccounts, request.copy(code = code))
                         accounts.clear(); accounts.addAll(updated); recordHistory(result); store.save(accounts)
-                        snack.showSnackbar(resultMessage(result)); refresh(false)
+                        toast.show(resultMessage(result)); refresh(false)
                     } },
                     onQrSign = { value, targetIds -> runTask {
                         val uri = Uri.parse(value.trim())
@@ -280,7 +252,7 @@ private fun CheckInApp(
                         if (courseId.isBlank() || ticket.isBlank() || sign.isBlank() || expire.isBlank()) throw KtpError("二维码缺少 courseid、ticketid、expire 或 sign 参数")
                         val (updated, result) = repository.signQr(accounts.toList(), targetIds, courseId, ticket, expire, sign)
                         accounts.clear(); accounts.addAll(updated); recordHistory(result); store.save(accounts)
-                        qrValue = ""; snack.showSnackbar(resultMessage(result)); refresh(false)
+                        qrValue = ""; toast.show(resultMessage(result)); refresh(false)
                     } },
                 )
                 Page.PLACES -> PlacesScreen(places, onAdd = { addPlace = true }, onDelete = { id ->
@@ -289,6 +261,7 @@ private fun CheckInApp(
                 })
                 Page.HISTORY -> HistoryScreen(history)
             }
+            IosToast(toast, Modifier.align(Alignment.TopCenter).padding(top = 8.dp, start = 24.dp, end = 24.dp))
         }
     }
 
@@ -298,7 +271,7 @@ private fun CheckInApp(
             if (accounts.any { it.email.equals(email.trim(), ignoreCase = true) }) throw KtpError("该账号已在本机")
             val account = repository.addAccount(email, password)
             accounts.add(account); store.save(accounts)
-            snack.showSnackbar("${account.email} 已添加并同步 ${account.courses.size} 门课程")
+            toast.show("${account.email} 已添加并同步 ${account.courses.size} 门课程")
             refresh(false)
         }
     })
@@ -306,13 +279,13 @@ private fun CheckInApp(
         val lat = latitude.toDoubleOrNull()
         val lon = longitude.toDoubleOrNull()
         when {
-            name.isBlank() -> scope.launch { snack.showSnackbar("请填写地点名称") }
-            lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0 -> scope.launch { snack.showSnackbar("请输入有效的经纬度") }
+            name.isBlank() -> scope.launch { toast.show("请填写地点名称") }
+            lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0 -> scope.launch { toast.show("请输入有效的经纬度") }
             else -> {
                 places.add(GpsPlace(name = name.trim(), latitude = latitude.trim(), longitude = longitude.trim()))
                 store.saveGpsPlaces(places.toList())
                 addPlace = false
-                scope.launch { snack.showSnackbar("已保存地点：${name.trim()}") }
+                scope.launch { toast.show("已保存地点：${name.trim()}") }
             }
         }
     })
@@ -326,9 +299,9 @@ private fun resultMessage(history: DirectHistory): String {
 
 /** 主题菜单里每个模式对应的图标。 */
 private fun ThemeMode.icon(): ImageVector = when (this) {
-    ThemeMode.SYSTEM -> Icons.Default.Contrast
-    ThemeMode.LIGHT -> Icons.Default.LightMode
-    ThemeMode.DARK -> Icons.Default.DarkMode
+    ThemeMode.SYSTEM -> Icons.Outlined.Contrast
+    ThemeMode.LIGHT -> Icons.Outlined.LightMode
+    ThemeMode.DARK -> Icons.Outlined.DarkMode
 }
 
 /** 考勤的稳定标识，用于在重组与 Activity 重建后仍然定位到同一条考勤。 */

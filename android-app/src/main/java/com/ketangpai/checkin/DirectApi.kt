@@ -11,15 +11,13 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 import java.security.KeyStore
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -191,22 +189,44 @@ class LocalAccountStore(context: Context) {
     }
 }
 
+/**
+ * 课堂派接口调用。网络层直接用 HttpURLConnection：
+ * 只需要一个 POST JSON，OkHttp 的拦截器、连接池调优在这里都用不上，
+ * 去掉它可以让 APK 少一个依赖、dex 少几百 KB。
+ * 底层仍复用 JVM 自带的 keep-alive 连接池，轮询时不会每次重新握手。
+ */
 class KetangpaiDirectApi {
-    private val client = OkHttpClient.Builder().connectTimeout(12, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS).build()
-    private val json = "application/json; charset=utf-8".toMediaType()
 
     suspend fun post(path: String, token: String = "", body: JSONObject = JSONObject()): JSONObject = withContext(Dispatchers.IO) {
         val payload = JSONObject(body.toString()).put("reqtimestamp", System.currentTimeMillis())
-        val builder = Request.Builder().url(KTP_BASE + path).header("Accept", "application/json, text/plain, */*")
-            .header("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7")
-            .header("Origin", "https://w.ketangpai.com").header("Referer", "https://w.ketangpai.com/")
-            .header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Mobile Safari/537.36")
-            .post(payload.toString().toRequestBody(json))
-        if (token.isNotBlank()) builder.header("token", token)
-        client.newCall(builder.build()).execute().use { response ->
-            val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) throw KtpError("课堂派网络请求失败（HTTP ${response.code}）", response.code)
+        val bytes = payload.toString().toByteArray(Charsets.UTF_8)
+        val connection = (URL(KTP_BASE + path).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 12_000
+            readTimeout = 20_000
+            doOutput = true
+            useCaches = false
+            setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            setRequestProperty("Accept", "application/json, text/plain, */*")
+            setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7")
+            setRequestProperty("Origin", "https://w.ketangpai.com")
+            setRequestProperty("Referer", "https://w.ketangpai.com/")
+            setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Mobile Safari/537.36")
+            if (token.isNotBlank()) setRequestProperty("token", token)
+        }
+        try {
+            connection.outputStream.use { it.write(bytes) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val text = stream?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
+            if (code !in 200..299) throw KtpError("课堂派网络请求失败（HTTP $code）", code)
             runCatching { JSONObject(text) }.getOrElse { throw KtpError("课堂派返回数据无法解析") }
+        } catch (error: KtpError) {
+            throw error
+        } catch (error: IOException) {
+            throw KtpError("网络请求失败：${error.message ?: "请检查网络连接"}")
+        } finally {
+            connection.disconnect()
         }
     }
 

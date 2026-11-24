@@ -20,6 +20,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -37,11 +38,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -57,7 +56,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -77,21 +78,62 @@ internal fun QrScanner(onClose: () -> Unit, onResult: (String) -> Unit) {
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed = it }
     LaunchedEffect(Unit) { if (!allowed) request.launch(Manifest.permission.CAMERA) }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("扫描签到二维码", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                    TextButton(onClick = onClose) { Text("关闭") }
+        Surface(Modifier.fillMaxSize(), color = iosColors.groupedBackground) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                Row(
+                    Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "关闭",
+                        Modifier.clickable(onClick = onClose).padding(vertical = 6.dp),
+                        fontSize = 17.sp,
+                        color = iosColors.blue,
+                    )
+                    Text(
+                        "扫码签到",
+                        Modifier.weight(1f),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = iosColors.label,
+                        textAlign = TextAlign.Center,
+                    )
+                    // 与左侧「关闭」等宽，保证标题真正居中。
+                    Spacer(Modifier.width(34.dp))
                 }
                 if (allowed) {
-                    CameraPreview(onResult, Modifier.fillMaxWidth().weight(1f))
+                    CameraPreview(onResult, Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp, vertical = 8.dp))
                 } else {
-                    Text("需要相机权限才能扫描二维码。", Modifier.padding(vertical = 20.dp))
-                    OutlinedButton(onClick = { request.launch(Manifest.permission.CAMERA) }) { Text("允许相机权限") }
+                    Column(Modifier.padding(horizontal = 16.dp)) {
+                        Text(
+                            "需要相机权限才能扫描二维码。",
+                            Modifier.padding(vertical = 20.dp),
+                            fontSize = 15.sp,
+                            color = iosColors.secondaryLabel,
+                        )
+                        com.ketangpai.checkin.ui.IosButton(
+                            "允许相机权限",
+                            onClick = { request.launch(Manifest.permission.CAMERA) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+/** 相机页底部的小号文字按钮。 */
+@Composable
+private fun ScanAction(text: String, enabled: Boolean = true, onClick: () -> Unit) {
+    Text(
+        text,
+        Modifier
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        fontSize = 15.sp,
+        color = iosColors.blue.copy(alpha = if (enabled) 1f else 0.38f),
+    )
 }
 
 @Composable
@@ -154,8 +196,8 @@ private fun CameraPreview(onResult: (String) -> Unit, modifier: Modifier) {
             )
         }
         if (maxZoomRatio > 1.05f) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("${"%.1f".format(Locale.US, zoomRatio)}×", Modifier.width(48.dp), style = MaterialTheme.typography.labelLarge)
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${"%.1f".format(Locale.US, zoomRatio)}×", Modifier.width(44.dp), fontSize = 15.sp, color = iosColors.secondaryLabel)
                 Slider(
                     value = zoomRatio.coerceIn(1f, maxZoomRatio),
                     onValueChange = { value -> camera?.cameraControl?.setZoomRatio(value) },
@@ -164,12 +206,16 @@ private fun CameraPreview(onResult: (String) -> Unit, modifier: Modifier) {
                 )
             }
         }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             if (hasFlash) {
-                TextButton(onClick = { camera?.cameraControl?.enableTorch(!torchEnabled) }) { Text(if (torchEnabled) "关闭补光" else "打开补光") }
+                ScanAction(if (torchEnabled) "关闭补光" else "打开补光") { camera?.cameraControl?.enableTorch(!torchEnabled) }
             }
-            TextButton(onClick = { focusAt(view.width / 2f, view.height / 2f) }, enabled = camera != null) { Text("重新对焦") }
-            TextButton(onClick = { showDiagnostics = !showDiagnostics }) { Text(if (showDiagnostics) "收起诊断" else "扫码诊断") }
+            ScanAction("重新对焦", enabled = camera != null) { focusAt(view.width / 2f, view.height / 2f) }
+            ScanAction(if (showDiagnostics) "收起诊断" else "扫码诊断") { showDiagnostics = !showDiagnostics }
         }
         if (showDiagnostics) {
             Text(
@@ -178,7 +224,10 @@ private fun CameraPreview(onResult: (String) -> Unit, modifier: Modifier) {
                     "WeChat ${stats.wechatMillis}ms / ${stats.wechatFrames} 帧 · ${stats.wechatState}\n" +
                     "亮度 ${stats.brightness}/255 · $focusState" +
                     if (stats.mlError.isBlank()) "" else "\n${stats.mlError}",
-                Modifier.fillMaxWidth().padding(bottom = 6.dp), style = MaterialTheme.typography.bodySmall,
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                color = iosColors.secondaryLabel,
             )
         }
     }
