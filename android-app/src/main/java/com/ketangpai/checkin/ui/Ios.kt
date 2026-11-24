@@ -1,9 +1,13 @@
 package com.ketangpai.checkin.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,14 +20,18 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
@@ -36,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -497,6 +506,10 @@ internal fun IosDot(color: Color, modifier: Modifier = Modifier) {
 /**
  * 底部表单 sheet：取消 / 标题 / 完成 的顶部栏 + 可滚动内容。
  * 表单类操作（添加账号、填地点）用它，确认类操作仍用 [IosAlert]。
+ *
+ * 这里刻意不用 Dialog：Dialog 是独立的浮动窗口，系统不会让它随输入法缩放，
+ * 键盘一弹出整个表单就被顶到屏幕外。放在应用窗口内的覆盖层里，
+ * 就能跟着 [WindowInsets.ime] 一起上移，顺带也能盖住底部标签栏。
  */
 @Composable
 internal fun IosSheet(
@@ -507,28 +520,45 @@ internal fun IosSheet(
     confirmEnabled: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.32f))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss,
-                ),
-            contentAlignment = Alignment.BottomCenter,
+    // 返回键先收表单，而不是直接退出应用。
+    BackHandler(onBack = onDismiss)
+
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { shown = true }
+
+    Box(Modifier.fillMaxSize()) {
+        AnimatedVisibility(
+            visible = shown,
+            modifier = Modifier.matchParentSize(),
+            enter = fadeIn(tween(180)),
+            exit = fadeOut(tween(140)),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss,
+                    ),
+            )
+        }
+        AnimatedVisibility(
+            visible = shown,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(120)),
+            exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(120)),
         ) {
             Column(
                 Modifier
                     .fillMaxWidth()
+                    // insets 要压在底色之前，面板底边才会正好停在键盘上方，
+                    // 而不是把整块卡片连同键盘一起铺到屏幕底下。
+                    .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
                     .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                     .background(iosColors.card)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
-                    .navigationBarsPadding()
                     .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 14.dp),
             ) {
                 Box(
@@ -567,7 +597,14 @@ internal fun IosSheet(
                         color = iosColors.blue.copy(alpha = if (confirmEnabled) 1f else 0.38f),
                     )
                 }
-                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), content = content)
+                // 键盘占掉大半屏幕时，表单本身可以滚动，内容不会被裁掉。
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    content = content,
+                )
             }
         }
     }

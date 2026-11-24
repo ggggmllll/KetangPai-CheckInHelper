@@ -41,9 +41,9 @@ internal fun AccountsScreen(
     onUpdate: (String, LocalAccount) -> Unit,
     onDelete: (String) -> Unit,
     onSync: () -> Unit,
+    onChangePassword: (LocalAccount) -> Unit,
 ) {
     var deleteTarget by remember { mutableStateOf<LocalAccount?>(null) }
-    var passwordTarget by remember { mutableStateOf<LocalAccount?>(null) }
     var expandedId by rememberSaveable { mutableStateOf("") }
 
     val enabledCount = accounts.count { it.enabled }
@@ -65,7 +65,7 @@ internal fun AccountsScreen(
                             expanded = account.id == expandedId,
                             onToggle = { expandedId = if (expandedId == account.id) "" else account.id },
                             onUpdate = onUpdate,
-                            onPassword = { passwordTarget = account },
+                            onPassword = { onChangePassword(account) },
                             onRemove = { deleteTarget = account },
                         )
                         if (index < accounts.lastIndex) IosDivider()
@@ -109,11 +109,6 @@ internal fun AccountsScreen(
             onConfirm = { onDelete(target.id); deleteTarget = null },
             onDismiss = { deleteTarget = null },
         )
-    }
-    passwordTarget?.let { target ->
-        UpdatePasswordDialog(target.email, onDismiss = { passwordTarget = null }, onSave = { password ->
-            onUpdate(target.id, target.copy(password = password, token = "")); passwordTarget = null; onSync()
-        })
     }
 }
 

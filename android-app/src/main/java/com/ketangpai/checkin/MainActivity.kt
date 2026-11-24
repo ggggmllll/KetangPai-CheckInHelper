@@ -4,23 +4,17 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Contrast
-import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -34,9 +28,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -52,21 +44,28 @@ import com.ketangpai.checkin.ui.IosToastState
 import com.ketangpai.checkin.ui.IosToolbar
 import com.ketangpai.checkin.ui.PendingScreen
 import com.ketangpai.checkin.ui.PlacesScreen
+import com.ketangpai.checkin.ui.SettingsSheet
+import com.ketangpai.checkin.ui.UpdatePasswordDialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 内容要铺到系统栏和输入法后面，insets 交给 Compose 消费，
+        // 底部表单才能跟着键盘一起上移。必须在 super.onCreate 之前调用。
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val store = LocalAccountStore(this)
         val repository = DirectRepository()
         val themePreference = ThemePreference(this)
+        val appSettings = AppSettings(this)
         setContent {
             var themeMode by remember { mutableStateOf(themePreference.mode) }
             CheckInTheme(themeMode) {
                 CheckInApp(
                     store = store,
                     repository = repository,
+                    appSettings = appSettings,
                     themeMode = themeMode,
                     onThemeModeChange = { mode -> themePreference.mode = mode; themeMode = mode },
                 )
@@ -83,6 +82,7 @@ internal enum class Page(val label: String) {
 private fun CheckInApp(
     store: LocalAccountStore,
     repository: DirectRepository,
+    appSettings: AppSettings,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
 ) {
@@ -104,7 +104,10 @@ private fun CheckInApp(
     var qrValue by rememberSaveable { mutableStateOf("") }
     var lastRefresh by remember { mutableStateOf(cachedSnapshot.second) }
     var pollErrors by remember { mutableStateOf(emptyList<String>()) }
-    var themeMenu by remember { mutableStateOf(false) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var autoSignOnScan by remember { mutableStateOf(appSettings.autoSignOnScan) }
+    // 只记 id，账号信息变化后仍能取到最新的一份。
+    var passwordTargetId by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         if (storeCorrupted) toast.show("本机账号数据无法解密，可能是系统密钥已重置，请重新添加账号")
@@ -176,6 +179,21 @@ private fun CheckInApp(
         }
     }
 
+    /** 解析二维码链接并提交给指定账号；扫码自动签到与手动提交共用这条路。 */
+    suspend fun submitQr(value: String, targetIds: Set<String>) {
+        val uri = Uri.parse(value.trim())
+        val courseId = uri.getQueryParameter("courseid").orEmpty()
+        val ticket = uri.getQueryParameter("ticketid").orEmpty()
+        val sign = uri.getQueryParameter("sign").orEmpty()
+        val expire = uri.getQueryParameter("expire").orEmpty()
+        if (courseId.isBlank() || ticket.isBlank() || sign.isBlank() || expire.isBlank()) {
+            throw KtpError("二维码缺少 courseid、ticketid、expire 或 sign 参数")
+        }
+        val (updated, result) = repository.signQr(accounts.toList(), targetIds, courseId, ticket, expire, sign)
+        accounts.clear(); accounts.addAll(updated); recordHistory(result); store.save(accounts)
+        qrValue = ""; toast.show(resultMessage(result)); refresh(false)
+    }
+
     Scaffold(
         containerColor = iosColors.groupedBackground,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -188,21 +206,7 @@ private fun CheckInApp(
                 } else {
                     IosBarButton(Icons.Outlined.Refresh, "立即刷新", onClick = { runTask { refresh(true) } })
                 }
-                Box {
-                    IosBarButton(themeMode.icon(), "外观主题", onClick = { themeMenu = true })
-                    DropdownMenu(expanded = themeMenu, onDismissRequest = { themeMenu = false }) {
-                        ThemeMode.entries.forEach { candidate ->
-                            DropdownMenuItem(
-                                text = { Text(candidate.label, fontSize = 15.sp) },
-                                leadingIcon = { Icon(candidate.icon(), null, Modifier.size(20.dp)) },
-                                trailingIcon = {
-                                    if (candidate == themeMode) Icon(Icons.Outlined.Check, "已选择", Modifier.size(18.dp), tint = iosColors.blue)
-                                },
-                                onClick = { themeMenu = false; onThemeModeChange(candidate) },
-                            )
-                        }
-                    }
-                }
+                IosBarButton(Icons.Outlined.Settings, "设置", onClick = { settingsOpen = true })
             }
         },
         bottomBar = { IosTabBar(page) { page = it } },
@@ -220,6 +224,7 @@ private fun CheckInApp(
                         pending.clear(); pending.addAll(filtered); store.saveSnapshot(pending, lastRefresh)
                     },
                     onSync = { runTask { refresh(true) } },
+                    onChangePassword = { account -> passwordTargetId = account.id },
                 )
                 Page.PENDING -> PendingScreen(
                     accounts, pending, places, pollErrors, lastRefresh, qrValue,
@@ -243,17 +248,7 @@ private fun CheckInApp(
                         accounts.clear(); accounts.addAll(updated); recordHistory(result); store.save(accounts)
                         toast.show(resultMessage(result)); refresh(false)
                     } },
-                    onQrSign = { value, targetIds -> runTask {
-                        val uri = Uri.parse(value.trim())
-                        val courseId = uri.getQueryParameter("courseid").orEmpty()
-                        val ticket = uri.getQueryParameter("ticketid").orEmpty()
-                        val sign = uri.getQueryParameter("sign").orEmpty()
-                        val expire = uri.getQueryParameter("expire").orEmpty()
-                        if (courseId.isBlank() || ticket.isBlank() || sign.isBlank() || expire.isBlank()) throw KtpError("二维码缺少 courseid、ticketid、expire 或 sign 参数")
-                        val (updated, result) = repository.signQr(accounts.toList(), targetIds, courseId, ticket, expire, sign)
-                        accounts.clear(); accounts.addAll(updated); recordHistory(result); store.save(accounts)
-                        qrValue = ""; toast.show(resultMessage(result)); refresh(false)
-                    } },
+                    onQrSign = { value, targetIds -> runTask { submitQr(value, targetIds) } },
                 )
                 Page.PLACES -> PlacesScreen(places, onAdd = { addPlace = true }, onDelete = { id ->
                     places.removeAll { it.id == id }
@@ -289,19 +284,43 @@ private fun CheckInApp(
             }
         }
     })
-    if (scanner) QrScanner(onClose = { scanner = false }, onResult = { value -> scanner = false; qrValue = value; page = Page.PENDING })
+    accounts.firstOrNull { it.id == passwordTargetId }?.let { target ->
+        UpdatePasswordDialog(
+            target.email,
+            onDismiss = { passwordTargetId = "" },
+            onSave = { password ->
+                passwordTargetId = ""
+                updateAccount(target.id, target.copy(password = password, token = ""))
+                runTask { refresh(true) }
+            },
+        )
+    }
+    if (scanner) QrScanner(
+        onClose = { scanner = false },
+        onResult = { value ->
+            scanner = false
+            // 先把链接落进输入框：自动签到失败时，用户还能在待签到页手动重试。
+            qrValue = value
+            page = Page.PENDING
+            if (autoSignOnScan) {
+                val targets = accounts.filter { it.enabled }.map { it.id }.toSet()
+                if (targets.isEmpty()) scope.launch { toast.show("没有启用的账号，先到「账号」页添加") }
+                else runTask { submitQr(value, targets) }
+            }
+        },
+    )
+    if (settingsOpen) SettingsSheet(
+        themeMode = themeMode,
+        onThemeModeChange = onThemeModeChange,
+        autoSignOnScan = autoSignOnScan,
+        onAutoSignOnScanChange = { autoSignOnScan = it; appSettings.autoSignOnScan = it },
+        onDismiss = { settingsOpen = false },
+    )
 }
 
 private fun resultMessage(history: DirectHistory): String {
     val success = history.results.count { it.success }
     return "${history.title}：$success/${history.results.size} 个账号签到成功"
-}
-
-/** 主题菜单里每个模式对应的图标。 */
-private fun ThemeMode.icon(): ImageVector = when (this) {
-    ThemeMode.SYSTEM -> Icons.Outlined.Contrast
-    ThemeMode.LIGHT -> Icons.Outlined.LightMode
-    ThemeMode.DARK -> Icons.Outlined.DarkMode
 }
 
 /** 考勤的稳定标识，用于在重组与 Activity 重建后仍然定位到同一条考勤。 */
