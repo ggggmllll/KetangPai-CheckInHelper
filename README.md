@@ -11,8 +11,11 @@
 - 自由选账号：签到不再要求账号事先绑定这门课程，任何启用的账号都能为任意考勤提交。数字与 GPS 签到可逐条勾选参与账号，默认选中原本就选了该课的账号；二维码签到默认使用全部启用账号。
 - GPS 地点列表：命名保存地点，支持手动输入和采样手机当前位置，显示位置来源和精度。
 - 二维码签到：相机扫描或粘贴链接，WeChat/OpenCV 与 ML Kit 并行识别，支持自动缩放、手动缩放、点击对焦、补光和扫码诊断。
+- 扫码后自动签到：扫到二维码默认立刻提交给全部启用账号，结果用顶部提示告知；可在顶栏「设置」里关掉，关掉后只把链接填进待签到页，由你选账号手动提交。
 - 本机记录：分别展示各账号的签到结果。
-- 暗黑模式：内置浅色与深色两套配色，顶栏可在「跟随系统 / 浅色 / 深色」之间切换，选择只保存在本机；状态栏、导航栏与启动底色会随主题同步，深色下不会闪白屏。
+- 暗黑模式：内置浅色与深色两套配色，顶栏「设置」面板可在「跟随系统 / 浅色 / 深色」之间切换，选择只保存在本机；状态栏、导航栏与启动底色会随主题同步，深色下不会闪白屏。
+- 界面：按 iOS HIG 组织——大标题 + 分组卡片（inset grouped）、行内 0.5dp 内缩分隔线、填充式输入框、底部 49dp 标签栏；正文 17sp、说明 13sp，替代了原先 11–12sp 的密集小字。
+- 关于：设置面板底部显示应用图标、名称与版本号，并提供 GitHub 仓库、问题反馈与开源协议（MIT）三个外链。
 
 账号、密码、登录 token 和地点加密保存在本机。首次添加账号需要联网。当前未实现后台持续监控，锁屏或切换到其他应用后不保证持续刷新。
 
@@ -41,7 +44,9 @@ macOS / Linux 构建：
 构建产物：
 
 - Debug：`android-app/build/outputs/apk/debug/android-app-debug.apk`
-- Release：配置本地签名后输出 `android-app/build/outputs/apk/release/android-app-release.apk`；未配置签名时输出同目录下的 `android-app-release-unsigned.apk`。Release 默认只包含 `arm64-v8a`，启用 R8 和 native 库压缩，当前约 16MB；适合 ARM64 真机。Debug 版本也只包含 `arm64-v8a`，模拟器或 32 位 ARM 设备不在此 APK 的支持范围内。
+- Release：配置本地签名后输出 `android-app/build/outputs/apk/release/android-app-release.apk`；未配置签名时输出同目录下的 `android-app-release-unsigned.apk`。Release 默认只包含 `arm64-v8a`，启用 R8 和 native 库压缩，当前约 15MB；适合 ARM64 真机。Debug 版本也只包含 `arm64-v8a`，模拟器或 32 位 ARM 设备不在此 APK 的支持范围内。
+
+体积构成：解压后约 28MB 是扫码引擎的 native 库（`libopencv_java4.so` 23MB、`libbarhopper_v3.so` 4.8MB），压缩进 APK 后仍占一半以上；其余 dex、资源、模型合计约 7MB。图标已改用 WebP 自适应图标（1.16MB → 25KB），网络层用 JDK 自带的 `HttpURLConnection` 替代 OkHttp，不再引入额外依赖。
 
 需要签名 Release 时，将根目录的 `keystore.properties.example` 复制为 `keystore.properties`，填写自己的密钥路径、别名和密码后再构建。`storeFile` 建议使用绝对路径，Windows 路径使用正斜杠（例如 `C:/keys/release.jks`）。签名配置、密钥和构建产物均被 Git 忽略，不会提交。
 
@@ -67,16 +72,17 @@ android-app/
       WeChatQrDecoder.kt # OpenCV 模型与小码识别
       DirectApi.kt       # 课堂派 API、账号与本机数据存储
       CourseSemester.kt  # 学期选择与展示
-      Theme.kt           # 浅色/深色配色、主题模式与偏好存储
+      Theme.kt           # iOS 语义配色、字号层级、主题模式与偏好存储
       ui/                # 各页面与对话框
+        Ios.kt           # 设计系统：分组卡片、行、分隔线、按钮、输入框、弹窗
+        IosTabBar.kt     # 底部标签栏与顶部工具栏
         HomeScreen.kt
         AccountsScreen.kt
         PendingScreen.kt
         PlacesScreen.kt
         HistoryScreen.kt
         Dialogs.kt
-        Components.kt
-    res/                # Android 资源（values/ 与 values-night/ 各一套窗口主题）
+    res/                # Android 资源（mipmap 自适应图标，values/ 与 values-night/ 各一套窗口主题）
   build.gradle.kts
 gradle/libs.versions.toml # 依赖与插件版本集中管理
 .github/workflows/        # 打 tag 自动构建并发布 APK

@@ -19,8 +19,8 @@ android {
         applicationId = "com.ketangpai.checkin"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.2.0"
+        versionCode = 7
+        versionName = "1.3.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // The deployed phone uses arm64. Do not ship emulator/32-bit native
@@ -28,7 +28,11 @@ android {
         ndk { abiFilters += setOf("arm64-v8a") }
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        // 「关于」里要显示版本号，直接从 BuildConfig 读，省得再查 PackageManager。
+        buildConfig = true
+    }
 
     // Compress native libraries inside the APK. Android extracts them before
     // loading, so this keeps the installed behavior while reducing download size.
@@ -74,7 +78,6 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
-    implementation(libs.okhttp)
     implementation(libs.mlkit.barcode)
     // Same WeChat QR detector + super-resolution engine as Ketangpai_Batch_Signer.
     // Only the arm64 native pack is needed because abiFilters ships arm64-v8a alone.

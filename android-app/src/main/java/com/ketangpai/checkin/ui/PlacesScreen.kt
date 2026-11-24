@@ -1,71 +1,64 @@
 package com.ketangpai.checkin.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.ketangpai.checkin.GpsPlace
+import com.ketangpai.checkin.iosColors
 
 @Composable
 internal fun PlacesScreen(places: List<GpsPlace>, onAdd: () -> Unit, onDelete: (String) -> Unit) {
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (places.isEmpty()) "保存常用位置，签到时一键选择" else "共 ${places.size} 个地点",
-                Modifier.weight(1f),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(onClick = onAdd) {
-                Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(5.dp)); Text("添加")
-            }
-        }
-        if (places.isEmpty()) {
-            Empty("还没有保存地点。可以手动输入经纬度，或采样当前手机位置。")
-        } else {
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(places, key = { it.id }) { place ->
-                    Card(shape = RoundedCornerShape(16.dp)) {
-                        Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(place.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    IosPage("GPS 地点", if (places.isEmpty()) "保存常用位置，签到时一键选择" else "共 ${places.size} 个地点") {
+        item {
+            IosGroup {
+                if (places.isEmpty()) {
+                    IosEmpty("还没有保存地点。可以在添加时采样当前位置，也可以手动填经纬度。")
+                } else {
+                    places.forEachIndexed { index, place ->
+                        IosRow(
+                            title = place.name,
+                            subtitle = "${place.latitude}, ${place.longitude}",
+                            showDivider = index < places.lastIndex,
+                            trailing = {
                                 Text(
-                                    "${place.latitude}, ${place.longitude}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                                    "删除",
+                                    Modifier.clickable { onDelete(place.id) }.padding(vertical = 4.dp),
+                                    fontSize = 15.sp,
+                                    color = iosColors.red,
                                 )
-                            }
-                            IconButton(onClick = { onDelete(place.id) }) {
-                                Icon(Icons.Default.DeleteOutline, "删除地点", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                            }
-                        }
+                            },
+                        )
                     }
                 }
+                Text(
+                    "添加地点",
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onAdd)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    fontSize = 17.sp,
+                    color = iosColors.blue,
+                )
+            }
+        }
+        item {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp)) {
+                Spacer(Modifier.height(0.dp))
+                Text(
+                    "GPS 签到时会用到这里保存的坐标。课堂派对距离有要求，坐标越接近实际位置越稳。",
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    color = iosColors.secondaryLabel,
+                )
             }
         }
     }
